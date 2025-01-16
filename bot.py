@@ -88,7 +88,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Run the bot."""
-    TOKEN = "YOUR_BOT_TOKEN"  # Replace with your bot token
+    TOKEN = "7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk"  # Replace with your bot token
     application = Application.builder().token(TOKEN).build()
 
     # Register handlers
