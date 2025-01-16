@@ -1,5 +1,6 @@
 import logging
 import requests
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
 from io import BytesIO
@@ -33,6 +34,16 @@ async def prompt_input(update: Update, context):
     await update.message.reply_text(f'Your prompt: {user_prompt}\nClick "Create" to generate the image.', reply_markup=reply_markup)
     return CREATE
 
+# Function to download and send the image
+async def download_and_send_image(url, query):
+    # Download the image from the URL
+    image_response = await asyncio.to_thread(requests.get, url)
+    image_file = BytesIO(image_response.content)
+    image_file.name = 'generated_image.webp'  # Optional, setting the filename
+
+    # Send the image as a photo
+    await query.message.reply_photo(photo=image_file, caption="Here is your generated image!")
+
 # Handle "Create" button click
 async def create_image(update: Update, context):
     query = update.callback_query
@@ -42,20 +53,15 @@ async def create_image(update: Update, context):
     prompt = context.user_data.get('prompt')
 
     # Make API request
-    response = requests.get(API_URL, params={'prompt': prompt, 'image': 3})
+    response = await asyncio.to_thread(requests.get, API_URL, params={'prompt': prompt, 'image': 3})
     data = response.json()
 
     # Handle image responses
     if data.get('images'):
         for image in data['images']:
             image_url = image['image']
-            # Download the image from the URL
-            image_response = requests.get(image_url)
-            image_file = BytesIO(image_response.content)
-            image_file.name = 'generated_image.webp'  # Optional, setting the filename
-
-            # Send the image as a photo
-            await query.message.reply_photo(photo=image_file, caption="Here is your generated image!")
+            # Call the download and send image function
+            await download_and_send_image(image_url, query)
     else:
         await query.message.reply_text("Error generating the image. Please try again later.")
 
