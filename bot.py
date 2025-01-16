@@ -1,29 +1,42 @@
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from io import BytesIO
 
 # API endpoint
 ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Welcome message when the user starts the bot."""
+    """Send a welcome message when the bot starts."""
     await update.message.reply_text(
         "Welcome! Send me a photo, and I'll enhance it for you."
     )
 
-async def enhance_photo(photo_url: str) -> str:
+async def enhance_photo(photo_url: str) -> BytesIO:
     """
-    Send the photo URL to the API and return the enhanced photo URL.
+    Send the photo URL to the API, download the enhanced photo,
+    and return it as a BytesIO object.
     """
     try:
+        # Send the photo to the enhancement API
         response = requests.get(ENHANCER_API + photo_url)
         response.raise_for_status()
         data = response.json()
+
         if data.get("status") == "success":
-            return data.get("image")
+            enhanced_url = data.get("image")
+
+            # Download the enhanced photo
+            enhanced_response = requests.get(enhanced_url)
+            enhanced_response.raise_for_status()
+
+            # Save the image to a BytesIO object
+            image_data = BytesIO(enhanced_response.content)
+            image_data.name = "enhanced_photo.jpg"  # Set a filename for the image
+            return image_data
         return None
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error enhancing photo: {e}")
         return None
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,9 +48,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enhancing your photo, please wait...")
 
     # Enhance photo using the API
-    enhanced_url = await enhance_photo(file_url)
-    if enhanced_url:
-        await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
     else:
         await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
@@ -54,9 +68,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enhancing your photo, please wait...")
 
     # Enhance photo using the API
-    enhanced_url = await enhance_photo(file_url)
-    if enhanced_url:
-        await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
     else:
         await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
