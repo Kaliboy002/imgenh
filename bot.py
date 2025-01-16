@@ -1,7 +1,16 @@
 import requests
+from io import BytesIO
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from io import BytesIO
+from pymongo import MongoClient
+from gridfs import GridFS
+
+# MongoDB Configuration
+MONGO_URI = "mongodb+srv://mrshokrullah:L7yjtsOjHzGBhaSR@cluster0.aqxyz.mongodb.net/shah?retryWrites=true&w=majority&appName=Cluster0"  # Replace with your MongoDB URI
+DB_NAME = "telegram_bot"
+client = MongoClient(MONGO_URI)
+db = client[DB_NAME]
+fs = GridFS(db)  # GridFS for handling large files
 
 # API endpoint
 ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
@@ -14,7 +23,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def enhance_photo(photo_url: str) -> BytesIO:
     """
-    Send the photo URL to the API, download the enhanced photo,
+    Enhance the photo by sending it to the API, download the enhanced photo,
     and return it as a BytesIO object.
     """
     try:
@@ -32,7 +41,7 @@ async def enhance_photo(photo_url: str) -> BytesIO:
 
             # Save the image to a BytesIO object
             image_data = BytesIO(enhanced_response.content)
-            image_data.name = "enhanced_photo.jpg"  # Set a filename for the image
+            image_data.name = "enhanced_photo.jpg"
             return image_data
         return None
     except Exception as e:
@@ -50,8 +59,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Enhance photo using the API
     enhanced_image = await enhance_photo(file_url)
     if enhanced_image:
-        # Send the enhanced photo back to the user
-        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
+        # Store the enhanced image in MongoDB
+        image_id = fs.put(enhanced_image.getvalue(), filename=enhanced_image.name)
+
+        # Retrieve the image back from MongoDB and send it to the user
+        stored_image = fs.get(image_id)
+        await update.message.reply_photo(BytesIO(stored_image.read()), caption="Here is your enhanced photo!")
+
+        # Delete the image from MongoDB after sending
+        fs.delete(image_id)
     else:
         await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
@@ -70,8 +86,15 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Enhance photo using the API
     enhanced_image = await enhance_photo(file_url)
     if enhanced_image:
-        # Send the enhanced photo back to the user
-        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
+        # Store the enhanced image in MongoDB
+        image_id = fs.put(enhanced_image.getvalue(), filename=enhanced_image.name)
+
+        # Retrieve the image back from MongoDB and send it to the user
+        stored_image = fs.get(image_id)
+        await update.message.reply_photo(BytesIO(stored_image.read()), caption="Here is your enhanced photo!")
+
+        # Delete the image from MongoDB after sending
+        fs.delete(image_id)
     else:
         await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
