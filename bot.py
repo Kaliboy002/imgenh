@@ -75,7 +75,7 @@ async def cancel(update: Update, context):
 # Main function to run the bot
 def main():
     # Set up the Application with your bot's token
-    application = Application.builder().token('7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk').build()
+    application = Application.builder().token('8179647576:AAGtc_X0wPoUDCQh-lEzZnDrYCCbXTBw0jk').build()
 
     # Set up conversation handler
     conv_handler = ConversationHandler(
