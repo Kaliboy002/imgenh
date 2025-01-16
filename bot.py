@@ -7,7 +7,7 @@ from PIL import Image
 import mimetypes
 
 # Replace with your actual bot token
-BOT_TOKEN = "8179647576:AAENs1QMb_dudcrSjrq0WJZWiNWiISQsyog"
+BOT_TOKEN = "7542750844:AAHy_rrWqETDZEqQJ5HVWlaKsEADCcfF3UE"
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
