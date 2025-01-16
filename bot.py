@@ -1,123 +1,98 @@
 import requests
-import time
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from io import BytesIO
 
-# Telegram Bot Token
-BOT_TOKEN = "7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk"  # Replace with your bot token
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+# API endpoint
+ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
 
-# Picsart API Configurations
-PICSART_API_URL = "https://ai.picsart.com/gw1/enhancement/v0319/pipeline"
-BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ijk3MjFiZTM2LWIyNzAtNDlkNS05NzU2LTlkNTk3Yzg2YjA1MSJ9.eyJzdWIiOiJhdXRoLXNlcnZpY2Utd2ViIiwiYXVkIjoiYXV0aC1zZXJ2aWNlLXdlYiIsIm5iZiI6MTY4NzQyOTgyOCwic2NvcGUiOltdLCJpYXQiOjE2ODc0NDA2MjgsImlzcyI6Imh0dHBzOi8vcGEtYXV0aG9yaXphdGlvbi1zZXJ2ZXIuc3RhZ2UucGljc2FydC50b29scy9hcGkvb2F1dGgyIiwianRpIjoiYjRkYzU1MzAtYzEzOC00MzBmLWFiNjUtYTMyNDZlYmMwNWU3In0.UpUJB5QBuQKekvSWcBiA_lH0YdB6wKGXu2VscIK3hNYfzCDvvu-jKF7hnVgbX-REE1fAO3CY68eKBthJU1cC48UqLmQHQk8imPIUdPfARRXnH_6y2Qc7FgP3-Go2hLPwTxPXcTX0_AvAt6nviLPnvbfhKrqB6bCp6W4nmVWakrE-PLCJtZ-KuCa5-b6MIsRz_tqNeDXP-TLZhjjdfjIk0hrqr86WIQOH2MsrwLibSpJyKBhNDh314T7fsV4pHx3uQj_NhchsDBATf6vF0x74VjHO1Y6r5XSi6zgBEm-zfdqPOVitC-J-nnQNlOwAEmgFL_Ho49mkgWKjFKmXvm4bFw"  # Replace with your Picsart Bearer token
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a welcome message when the bot starts."""
+    await update.message.reply_text(
+        "Welcome! Send me a photo, and I'll enhance it for you."
+    )
 
+async def enhance_photo(photo_url: str) -> BytesIO:
+    """
+    Send the photo URL to the API, download the enhanced photo,
+    and return it as a BytesIO object.
+    """
+    try:
+        # Send the photo to the enhancement API
+        response = requests.get(ENHANCER_API + photo_url)
+        response.raise_for_status()
+        data = response.json()
 
-def get_file_url(file_id):
-    """Retrieve the file URL from Telegram using the file_id."""
-    response = requests.get(f"{TELEGRAM_API_URL}getFile", params={"file_id": file_id})
-    if response.status_code == 200:
-        file_path = response.json().get("result", {}).get("file_path")
-        if file_path:
-            return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-    return None
+        if data.get("status") == "success":
+            enhanced_url = data.get("image")
 
+            # Download the enhanced photo
+            enhanced_response = requests.get(enhanced_url)
+            enhanced_response.raise_for_status()
 
-def get_transaction_id(photo_url):
-    """Send the photo URL to Picsart API to get a transaction ID."""
-    url_with_params = f"{PICSART_API_URL}?picsart_cdn_url={photo_url}&format=PNG&model=REALESERGAN"
-    headers = {
-        "Content-Type": "application/json",
-        "x-touchpoint-referrer": "/ai-image-enhancer/",
-        "x-touchpoint": "widget_EnhancedImage",
-        "x-app-authorization": f"Bearer {BEARER_TOKEN}",
-        "Origin": "https://picsart.com",
-        "Accept": "application/json",
-    }
+            # Save the image to a BytesIO object
+            image_data = BytesIO(enhanced_response.content)
+            image_data.name = "enhanced_photo.jpg"  # Set a filename for the image
+            return image_data
+        return None
+    except Exception as e:
+        print(f"Error enhancing photo: {e}")
+        return None
 
-    response = requests.post(url_with_params, headers=headers, json={})
-    if response.status_code == 200:
-        return response.json().get("transaction_id")
-    return None
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photos sent by the user."""
+    photo = update.message.photo[-1]  # Get the highest resolution photo
+    file = await context.bot.get_file(photo.file_id)
+    file_url = file.file_path  # Get the direct URL to the photo
 
+    await update.message.reply_text("Enhancing your photo, please wait...")
 
-def get_enhanced_photo(transaction_id):
-    """Retrieve the enhanced photo URL using the transaction ID."""
-    headers = {
-        "x-app-authorization": f"Bearer {BEARER_TOKEN}",
-        "Accept": "application/json",
-    }
+    # Enhance photo using the API
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
+    else:
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
-    for _ in range(3):  # Retry logic
-        response = requests.get(f"{PICSART_API_URL}/{transaction_id}", headers=headers)
-        if response.status_code == 200:
-            tmp_url = response.json().get("results", {}).get("tmp_url")
-            if tmp_url:
-                return tmp_url
-        time.sleep(5)  # Wait before retrying
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo files sent by the user."""
+    file = update.message.document
+    if not file.mime_type.startswith("image/"):
+        await update.message.reply_text("Please send a valid image file!")
+        return
 
-    return None
+    file_obj = await context.bot.get_file(file.file_id)
+    file_url = file_obj.file_path  # Get the direct URL to the file
 
+    await update.message.reply_text("Enhancing your photo, please wait...")
 
-def send_message(chat_id, text):
-    """Send a message to a Telegram chat."""
-    requests.post(f"{TELEGRAM_API_URL}sendMessage", json={"chat_id": chat_id, "text": text})
-
-
-def send_photo(chat_id, photo_url, caption=""):
-    """Send a photo to a Telegram chat."""
-    requests.post(f"{TELEGRAM_API_URL}sendPhoto", json={"chat_id": chat_id, "photo": photo_url, "caption": caption})
-
-
-def process_update(update):
-    """Process incoming Telegram updates."""
-    if "message" in update:
-        message = update["message"]
-        chat_id = message["chat"]["id"]
-
-        # Handle photos sent by the user
-        if "photo" in message:
-            file_id = message["photo"][-1]["file_id"]  # Get the highest resolution photo
-            file_url = get_file_url(file_id)
-
-            if file_url:
-                send_message(chat_id, "Processing your photo. Please wait...")
-
-                # Step 1: Get the transaction ID
-                transaction_id = get_transaction_id(file_url)
-
-                if transaction_id:
-                    # Step 2: Get the enhanced photo URL
-                    enhanced_photo_url = get_enhanced_photo(transaction_id)
-
-                    if enhanced_photo_url:
-                        send_photo(chat_id, enhanced_photo_url, "Here is your enhanced photo!")
-                    else:
-                        send_message(chat_id, "Sorry, I couldn't enhance your photo. Please try again later.")
-                else:
-                    send_message(chat_id, "Failed to process your photo. Please try again.")
-            else:
-                send_message(chat_id, "Couldn't fetch your photo. Please try again.")
-        else:
-            send_message(chat_id, "Please send a valid photo.")
-
+    # Enhance photo using the API
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
+    else:
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
 def main():
-    """Main function to handle Telegram bot updates."""
-    offset = None
+    """Run the bot."""
+    TOKEN = "7542750844:AAHy_rrWqETDZEqQJ5HVWlaKsEADCcfF3UE"  # Replace with your bot token
+    application = Application.builder().token(TOKEN).build()
 
-    while True:
-        # Fetch updates from Telegram
-        params = {"timeout": 100, "offset": offset}
-        response = requests.get(f"{TELEGRAM_API_URL}getUpdates", params=params)
+    # Register handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
 
-        if response.status_code == 200:
-            updates = response.json().get("result", [])
-
-            for update in updates:
-                process_update(update)
-                offset = update["update_id"] + 1
-        else:
-            print(f"Error fetching updates: {response.status_code}")
-            time.sleep(5)  # Wait before retrying in case of errors
-
+    # Start polling
+    application.run_polling()
+    print("Bot is running...")
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
