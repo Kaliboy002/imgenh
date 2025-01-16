@@ -2,7 +2,7 @@ import requests
 import time
 
 # Telegram Bot Token
-BOT_TOKEN = "7542750844:AAHy_rrWqETDZEqQJ5HVWlaKsEADCcfF3UE"  # Replace with your bot token
+BOT_TOKEN = "7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk"  # Replace with your bot token
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # Picsart API Configurations
