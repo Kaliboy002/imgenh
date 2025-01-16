@@ -1,7 +1,8 @@
 import logging
+import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
-import requests
+from io import BytesIO
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -48,7 +49,13 @@ async def create_image(update: Update, context):
     if data.get('images'):
         for image in data['images']:
             image_url = image['image']
-            await query.message.reply_text(f"Generated Image:\n{image_url}")
+            # Download the image from the URL
+            image_response = requests.get(image_url)
+            image_file = BytesIO(image_response.content)
+            image_file.name = 'generated_image.webp'  # Optional, setting the filename
+
+            # Send the image as a photo
+            await query.message.reply_photo(photo=image_file, caption="Here is your generated image!")
     else:
         await query.message.reply_text("Error generating the image. Please try again later.")
 
