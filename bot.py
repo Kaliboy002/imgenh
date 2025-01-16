@@ -2,7 +2,7 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-BOT_TOKEN = "7628087790:AAEzbDoI4po7MHKeNw1jg-quRxzogHCiFAo"
+BOT_TOKEN = "8179647576:AAENs1QMb_dudcrSjrq0WJZWiNWiISQsyog"
 
 async def start(update: Update, context):
     await update.message.reply_text("Send me a photo!")
