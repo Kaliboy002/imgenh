@@ -2,7 +2,6 @@ import aiohttp
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from io import BytesIO
 
 # API endpoints
 TRANSACTION_API = "https://for-free.serv00.net/get_transaction_id.php?image="
@@ -20,19 +19,17 @@ async def get_transaction_id(photo_url: str) -> str:
     """
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(TRANSACTION_API + photo_url) as response:
+            async with session.get(f"{TRANSACTION_API}{photo_url}") as response:
                 response.raise_for_status()
                 data = await response.json()
-                print(f"Transaction API Response: {data}")
-
                 if data.get("status") == "ACCEPTED":
-                    transaction_id = data.get("transaction_id")
-                    print(f"Transaction ID: {transaction_id}")
-                    return transaction_id
-        return None
+                    return data.get("transaction_id")
+                print("Transaction ID not found in response.")
+    except aiohttp.ClientResponseError as e:
+        print(f"Client error: {e.status} - {e.message}")
     except Exception as e:
         print(f"Error getting transaction ID: {e}")
-        return None
+    return None
 
 async def get_enhanced_photo_url(transaction_id: str) -> str:
     """
@@ -42,14 +39,11 @@ async def get_enhanced_photo_url(transaction_id: str) -> str:
     for attempt in range(retry_count):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(ENHANCER_RESULT_API + transaction_id) as response:
+                async with session.get(f"{ENHANCER_RESULT_API}{transaction_id}") as response:
                     response.raise_for_status()
                     data = await response.json()
-
                     if "tmp_url" in data:
-                        enhanced_url = data["tmp_url"]
-                        print(f"Enhanced photo URL: {enhanced_url}")
-                        return enhanced_url
+                        return data["tmp_url"]
                     else:
                         print(f"Attempt {attempt + 1}: tmp_url not found, retrying...")
                         await asyncio.sleep(5)  # Wait before retrying
@@ -62,7 +56,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photos sent by the user."""
     photo = update.message.photo[-1]  # Get the highest resolution photo
     file = await context.bot.get_file(photo.file_id)
-    file_url = file.file_path  # Get the direct URL to the photo
+    file_url = f"https://api.telegram.org/file/bot{context.bot.token}/{file.file_path}"
 
     await update.message.reply_text("Enhancing your photo, please wait...")
 
@@ -87,7 +81,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     file_obj = await context.bot.get_file(file.file_id)
-    file_url = file_obj.file_path  # Get the direct URL to the file
+    file_url = f"https://api.telegram.org/file/bot{context.bot.token}/{file_obj.file_path}"
 
     await update.message.reply_text("Enhancing your photo, please wait...")
 
