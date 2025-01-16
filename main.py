@@ -91,7 +91,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-make this to php without changing the amin functions
