@@ -1,4 +1,5 @@
 import requests
+import concurrent.futures
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from io import BytesIO
@@ -6,15 +7,18 @@ from io import BytesIO
 # API endpoint
 ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
 
+# Executor for background tasks
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a welcome message when the bot starts."""
     await update.message.reply_text(
         "Welcome! Send me a photo, and I'll enhance it for you."
     )
 
-async def enhance_photo(photo_url: str) -> BytesIO:
+def enhance_photo_sync(photo_url: str) -> BytesIO:
     """
-    Send the photo URL to the API, download the enhanced photo,
+    Synchronously send the photo URL to the API, download the enhanced photo,
     and return it as a BytesIO object.
     """
     try:
@@ -39,6 +43,13 @@ async def enhance_photo(photo_url: str) -> BytesIO:
         print(f"Error enhancing photo: {e}")
         return None
 
+async def enhance_photo(photo_url: str) -> BytesIO:
+    """
+    Run the photo enhancement process in a background thread.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, enhance_photo_sync, photo_url)
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photos sent by the user."""
     photo = update.message.photo[-1]  # Get the highest resolution photo
@@ -48,7 +59,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enhancing your photo, please wait...")
 
     # Enhance photo using the API
-    enhanced_image = await enhance_photo(file_url)
+    enhanced_image = await enhance_photo(photo_url=file_url)
     if enhanced_image:
         # Send the enhanced photo back to the user
         await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
@@ -68,7 +79,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Enhancing your photo, please wait...")
 
     # Enhance photo using the API
-    enhanced_image = await enhance_photo(file_url)
+    enhanced_image = await enhance_photo(photo_url=file_url)
     if enhanced_image:
         # Send the enhanced photo back to the user
         await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
@@ -77,7 +88,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Run the bot."""
-    TOKEN = "7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk"  # Replace with your bot token
+    TOKEN = "YOUR_BOT_TOKEN"  # Replace with your bot token
     application = Application.builder().token(TOKEN).build()
 
     # Register handlers
@@ -91,8 +102,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
