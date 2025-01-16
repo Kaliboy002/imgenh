@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from io import BytesIO
@@ -21,14 +22,13 @@ async def get_transaction_id(photo_url: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(TRANSACTION_API + photo_url) as response:
                 response.raise_for_status()
-                # Log the raw response for debugging
                 raw_data = await response.text()
-                print(f"Transaction API Response: {raw_data}")  # Log raw response
+                print(f"Transaction API Response: {raw_data}")
                 data = await response.json()
 
                 if data.get("status") == "ACCEPTED":
                     transaction_id = data.get("transaction_id")
-                    print(f"Transaction ID: {transaction_id}")  # Log the transaction ID
+                    print(f"Transaction ID: {transaction_id}")
                     return transaction_id
         return None
     except Exception as e:
@@ -39,23 +39,27 @@ async def get_enhanced_photo_url(transaction_id: str) -> str:
     """
     Send the transaction ID to the second API and get the enhanced photo URL.
     """
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(ENHANCER_RESULT_API + transaction_id) as response:
-                response.raise_for_status()
-                # Log the raw response for debugging
-                raw_data = await response.text()
-                print(f"Enhanced Photo URL API Response: {raw_data}")  # Log raw response
-                data = await response.json()
+    retry_count = 3
+    for attempt in range(retry_count):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ENHANCER_RESULT_API + transaction_id) as response:
+                    response.raise_for_status()
+                    raw_data = await response.text()
+                    print(f"Enhanced Photo URL API Response: {raw_data}")
+                    data = await response.json()
 
-                if "tmp_url" in data:
-                    enhanced_url = data["tmp_url"]
-                    print(f"Enhanced photo URL: {enhanced_url}")  # Log the enhanced photo URL
-                    return enhanced_url
-        return None
-    except Exception as e:
-        print(f"Error getting enhanced photo URL: {e}")
-        return None
+                    if "tmp_url" in data:
+                        enhanced_url = data["tmp_url"]
+                        print(f"Enhanced photo URL: {enhanced_url}")
+                        return enhanced_url
+                    else:
+                        print(f"Attempt {attempt + 1}: tmp_url not found, retrying...")
+                        await asyncio.sleep(5)  # Wait before retrying
+        except Exception as e:
+            print(f"Error getting enhanced photo URL: {e}")
+            await asyncio.sleep(5)  # Wait before retrying
+    return None
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photos sent by the user."""
@@ -74,7 +78,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Send the enhanced photo back to the user
             await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
         else:
-            await update.message.reply_text("Sorry, I couldn't retrieve the enhanced photo. Please try again.")
+            await update.message.reply_text("Sorry, I couldn't retrieve the enhanced photo. Please try again later.")
     else:
         await update.message.reply_text("Sorry, I couldn't process your photo. Please try again.")
 
@@ -99,7 +103,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Send the enhanced photo back to the user
             await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
         else:
-            await update.message.reply_text("Sorry, I couldn't retrieve the enhanced photo. Please try again.")
+            await update.message.reply_text("Sorry, I couldn't retrieve the enhanced photo. Please try again later.")
     else:
         await update.message.reply_text("Sorry, I couldn't process your photo. Please try again.")
 
