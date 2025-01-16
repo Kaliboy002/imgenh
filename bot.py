@@ -1,18 +1,17 @@
-import os
 import requests
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # API endpoint
 ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
 
-def start(update: Update, context: CallbackContext):
-    """Send a welcome message when the bot starts."""
-    update.message.reply_text(
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Welcome message when the user starts the bot."""
+    await update.message.reply_text(
         "Welcome! Send me a photo, and I'll enhance it for you."
     )
 
-def enhance_photo(photo_url: str) -> str:
+async def enhance_photo(photo_url: str) -> str:
     """
     Send the photo URL to the API and return the enhanced photo URL.
     """
@@ -22,63 +21,58 @@ def enhance_photo(photo_url: str) -> str:
         data = response.json()
         if data.get("status") == "success":
             return data.get("image")
-        else:
-            return None
+        return None
     except Exception as e:
         print(f"Error: {e}")
         return None
 
-def handle_photo(update: Update, context: CallbackContext):
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photos sent by the user."""
-    message = update.message
-    photo = message.photo[-1]  # Get the highest resolution photo
-    file = context.bot.get_file(photo.file_id)
+    photo = update.message.photo[-1]  # Get the highest resolution photo
+    file = await context.bot.get_file(photo.file_id)
     file_url = file.file_path  # Get the direct URL to the photo
 
-    update.message.reply_text("Enhancing your photo, please wait...")
-    
-    # Enhance photo using the API
-    enhanced_url = enhance_photo(file_url)
-    if enhanced_url:
-        update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
-    else:
-        update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
+    await update.message.reply_text("Enhancing your photo, please wait...")
 
-def handle_file(update: Update, context: CallbackContext):
+    # Enhance photo using the API
+    enhanced_url = await enhance_photo(file_url)
+    if enhanced_url:
+        await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
+    else:
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
+
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photo files sent by the user."""
-    message = update.message
-    file = message.document
+    file = update.message.document
     if not file.mime_type.startswith("image/"):
-        update.message.reply_text("Please send an image file!")
+        await update.message.reply_text("Please send a valid image file!")
         return
 
-    file_obj = context.bot.get_file(file.file_id)
+    file_obj = await context.bot.get_file(file.file_id)
     file_url = file_obj.file_path  # Get the direct URL to the file
 
-    update.message.reply_text("Enhancing your photo, please wait...")
-    
+    await update.message.reply_text("Enhancing your photo, please wait...")
+
     # Enhance photo using the API
-    enhanced_url = enhance_photo(file_url)
+    enhanced_url = await enhance_photo(file_url)
     if enhanced_url:
-        update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
+        await update.message.reply_photo(enhanced_url, caption="Here is your enhanced photo!")
     else:
-        update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
 def main():
-    # Create the Updater and pass it your bot's token
-    TOKEN = "7542750844:AAHy_rrWqETDZEqQJ5HVWlaKsEADCcfF3UE"
-    updater = Updater(TOKEN)
+    """Run the bot."""
+    TOKEN = "7542750844:AAHy_rrWqETDZEqQJ5HVWlaKsEADCcfF3UE"  # Replace with your bot token
+    application = Application.builder().token(TOKEN).build()
 
     # Register handlers
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
-    dp.add_handler(MessageHandler(Filters.document, handle_file))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
 
-    # Start the bot
-    updater.start_polling()
+    # Start polling
+    application.run_polling()
     print("Bot is running...")
-    updater.idle()
 
 if __name__ == "__main__":
     main()
