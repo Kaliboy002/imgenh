@@ -1,104 +1,83 @@
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
 import requests
-import concurrent.futures
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from io import BytesIO
 
-# API endpoint
-ENHANCER_API = "https://for-free.serv00.net/C/img_enhancer.php?url="
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Executor for background tasks
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+# Define states for conversation
+PROMPT = 1
+CREATE = 2
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a welcome message when the bot starts."""
-    await update.message.reply_text(
-        "Welcome! Send me a photo, and I'll enhance it for you."
+# Define API URL
+API_URL = "https://for-free.serv00.net/A/aiimage.php"
+
+# Start command handler
+async def start(update: Update, context):
+    await update.message.reply_text('Welcome! Please enter a prompt to generate an image:')
+    return PROMPT
+
+# Handle prompt input
+async def prompt_input(update: Update, context):
+    user_prompt = update.message.text
+    context.user_data['prompt'] = user_prompt
+
+    # Create inline button for the user to generate the image
+    keyboard = [
+        [InlineKeyboardButton("Create", callback_data='create_image')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f'Your prompt: {user_prompt}\nClick "Create" to generate the image.', reply_markup=reply_markup)
+    return CREATE
+
+# Handle "Create" button click
+async def create_image(update: Update, context):
+    query = update.callback_query
+    await query.answer()
+
+    # Get the prompt from user_data
+    prompt = context.user_data.get('prompt')
+
+    # Make API request
+    response = requests.get(API_URL, params={'prompt': prompt, 'image': 3})
+    data = response.json()
+
+    # Handle image responses
+    if data.get('images'):
+        for image in data['images']:
+            image_url = image['image']
+            await query.message.reply_text(f"Generated Image:\n{image_url}")
+    else:
+        await query.message.reply_text("Error generating the image. Please try again later.")
+
+    return ConversationHandler.END
+
+# Cancel command handler
+async def cancel(update: Update, context):
+    await update.message.reply_text('Conversation canceled.')
+    return ConversationHandler.END
+
+# Main function to run the bot
+def main():
+    # Set up the Application with your bot's token
+    application = Application.builder().token('7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk').build()
+
+    # Set up conversation handler
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, prompt_input)],
+            CREATE: [CallbackQueryHandler(create_image, pattern='^create_image$')],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-def enhance_photo_sync(photo_url: str) -> BytesIO:
-    """
-    Synchronously send the photo URL to the API, download the enhanced photo,
-    and return it as a BytesIO object.
-    """
-    try:
-        # Send the photo to the enhancement API
-        response = requests.get(ENHANCER_API + photo_url)
-        response.raise_for_status()
-        data = response.json()
+    application.add_handler(conv_handler)
 
-        if data.get("status") == "success":
-            enhanced_url = data.get("image")
-
-            # Download the enhanced photo
-            enhanced_response = requests.get(enhanced_url)
-            enhanced_response.raise_for_status()
-
-            # Save the image to a BytesIO object
-            image_data = BytesIO(enhanced_response.content)
-            image_data.name = "enhanced_photo.jpg"  # Set a filename for the image
-            return image_data
-        return None
-    except Exception as e:
-        print(f"Error enhancing photo: {e}")
-        return None
-
-async def enhance_photo(photo_url: str) -> BytesIO:
-    """
-    Run the photo enhancement process in a background thread.
-    """
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, enhance_photo_sync, photo_url)
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photos sent by the user."""
-    photo = update.message.photo[-1]  # Get the highest resolution photo
-    file = await context.bot.get_file(photo.file_id)
-    file_url = file.file_path  # Get the direct URL to the photo
-
-    await update.message.reply_text("Enhancing your photo, please wait...")
-
-    # Enhance photo using the API
-    enhanced_image = await enhance_photo(photo_url=file_url)
-    if enhanced_image:
-        # Send the enhanced photo back to the user
-        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
-    else:
-        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
-
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo files sent by the user."""
-    file = update.message.document
-    if not file.mime_type.startswith("image/"):
-        await update.message.reply_text("Please send a valid image file!")
-        return
-
-    file_obj = await context.bot.get_file(file.file_id)
-    file_url = file_obj.file_path  # Get the direct URL to the file
-
-    await update.message.reply_text("Enhancing your photo, please wait...")
-
-    # Enhance photo using the API
-    enhanced_image = await enhance_photo(photo_url=file_url)
-    if enhanced_image:
-        # Send the enhanced photo back to the user
-        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
-    else:
-        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
-
-def main():
-    """Run the bot."""
-    TOKEN = "7542750844:AAH3oKXtFK7NT2BAkmkOX_cifSIu9lHdDQk"  # Replace with your bot token
-    application = Application.builder().token(TOKEN).build()
-
-    # Register handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-
-    # Start polling
+    # Start the bot
     application.run_polling()
-    print("Bot is running...")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
