@@ -21,10 +21,15 @@ async def get_transaction_id(photo_url: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(TRANSACTION_API + photo_url) as response:
                 response.raise_for_status()
+                # Log the raw response for debugging
+                raw_data = await response.text()
+                print(f"Transaction API Response: {raw_data}")  # Log raw response
                 data = await response.json()
 
                 if data.get("status") == "ACCEPTED":
-                    return data.get("transaction_id")
+                    transaction_id = data.get("transaction_id")
+                    print(f"Transaction ID: {transaction_id}")  # Log the transaction ID
+                    return transaction_id
         return None
     except Exception as e:
         print(f"Error getting transaction ID: {e}")
@@ -38,10 +43,15 @@ async def get_enhanced_photo_url(transaction_id: str) -> str:
         async with aiohttp.ClientSession() as session:
             async with session.get(ENHANCER_RESULT_API + transaction_id) as response:
                 response.raise_for_status()
+                # Log the raw response for debugging
+                raw_data = await response.text()
+                print(f"Enhanced Photo URL API Response: {raw_data}")  # Log raw response
                 data = await response.json()
 
                 if "tmp_url" in data:
-                    return data["tmp_url"]
+                    enhanced_url = data["tmp_url"]
+                    print(f"Enhanced photo URL: {enhanced_url}")  # Log the enhanced photo URL
+                    return enhanced_url
         return None
     except Exception as e:
         print(f"Error getting enhanced photo URL: {e}")
