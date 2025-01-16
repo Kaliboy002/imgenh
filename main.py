@@ -1,66 +1,97 @@
 import requests
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from io import BytesIO
-from PIL import Image
-import os
 
-# Replace with your actual Telegram bot token
-BOT_TOKEN = "7619913840:AAE0YGPTYTFIJOQEivGIfd5WaJczuUdSZdg"
-API_URL = 'https://for-free.serv00.net/K/img_enhancer.php?url='
+# API endpoint
+ENHANCER_API = "https://for-free.serv00.net/K/img_enhancer.php?url="
 
-# Start handler function
-async def start(update, context):
-    await update.message.reply_text("Welcome! Please send me a photo to enhance.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a welcome message when the bot starts."""
+    await update.message.reply_text(
+        "Welcome! Send me a photo, and I'll enhance it for you."
+    )
 
-# Handle photo and interact with the API
-async def handle_photo(update, context):
-    # Get the photo sent by the user
-    photo = update.message.photo[-1]
-    file = await photo.get_file()
+async def enhance_photo(photo_url: str) -> BytesIO:
+    """
+    Send the photo URL to the API, download the enhanced photo,
+    and return it as a BytesIO object.
+    """
+    try:
+        # Send the photo to the enhancement API
+        response = requests.get(ENHANCER_API + photo_url)
+        response.raise_for_status()
+        data = response.json()
 
-    # Download the photo
-    photo_url = file.file_url
-    response = requests.get(photo_url)
+        if data.get("status") == "success":
+            enhanced_url = data.get("image")
 
-    if response.status_code == 200:
-        # Save the photo temporarily
-        img = Image.open(BytesIO(response.content))
-        temp_image_path = 'temp_image.jpg'
-        img.save(temp_image_path)
+            # Download the enhanced photo
+            enhanced_response = requests.get(enhanced_url)
+            enhanced_response.raise_for_status()
 
-        # Upload the image to the API for enhancement
-        files = {'file': open(temp_image_path, 'rb')}
-        api_response = requests.post(API_URL + 'url=' + photo_url, files=files)
+            # Save the image to a BytesIO object
+            image_data = BytesIO(enhanced_response.content)
+            image_data.name = "enhanced_photo.jpg"  # Set a filename for the image
+            return image_data
+        return None
+    except Exception as e:
+        print(f"Error enhancing photo: {e}")
+        return None
 
-        # Check if the API responded with success
-        if api_response.status_code == 200:
-            api_result = api_response.json()
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photos sent by the user."""
+    photo = update.message.photo[-1]  # Get the highest resolution photo
+    file = await context.bot.get_file(photo.file_id)
+    file_url = file.file_path  # Get the direct URL to the photo
 
-            # If success, send back the enhanced image
-            if api_result.get("status") == "success":
-                enhanced_image_url = api_result.get("image")
-                await update.message.reply_photo(enhanced_image_url)
-            else:
-                await update.message.reply_text("Sorry, there was an error enhancing the image.")
-        else:
-            await update.message.reply_text("Sorry, there was an issue with the enhancement API.")
-        
-        # Clean up the temporary image
-        os.remove(temp_image_path)
+    await update.message.reply_text("Enhancing your photo, please wait...")
+
+    # Enhance photo using the API
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
     else:
-        await update.message.reply_text("Sorry, I couldn't download your image.")
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
+
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo files sent by the user."""
+    file = update.message.document
+    if not file.mime_type.startswith("image/"):
+        await update.message.reply_text("Please send a valid image file!")
+        return
+
+    file_obj = await context.bot.get_file(file.file_id)
+    file_url = file_obj.file_path  # Get the direct URL to the file
+
+    await update.message.reply_text("Enhancing your photo, please wait...")
+
+    # Enhance photo using the API
+    enhanced_image = await enhance_photo(file_url)
+    if enhanced_image:
+        # Send the enhanced photo back to the user
+        await update.message.reply_photo(enhanced_image, caption="Here is your enhanced photo!")
+    else:
+        await update.message.reply_text("Sorry, I couldn't enhance the photo. Please try again.")
 
 def main():
-    # Create bot application
-    application = Application.builder().token(BOT_TOKEN).build()
+    """Run the bot."""
+    TOKEN = "7619913840:AAE0YGPTYTFIJOQEivGIfd5WaJczuUdSZdg"  # Replace with your bot token
+    application = Application.builder().token(TOKEN).build()
 
     # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
 
-    # Start the bot
-    print("Bot is running...")
+    # Start polling
     application.run_polling()
+    print("Bot is running...")
 
 if __name__ == "__main__":
     main()
+
+
+
+make this to php without changing the amin functions
