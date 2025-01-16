@@ -7,7 +7,7 @@ from gridfs import GridFS
 
 # MongoDB Configuration
 MONGO_URI = "mongodb+srv://mrshokrullah:L7yjtsOjHzGBhaSR@cluster0.aqxyz.mongodb.net/shah?retryWrites=true&w=majority&appName=Cluster0"  # Replace with your MongoDB URI
-DB_NAME = "telegram_bot"
+DB_NAME = "shah"
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 fs = GridFS(db)  # GridFS for handling large files
