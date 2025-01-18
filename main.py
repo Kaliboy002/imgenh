@@ -2,6 +2,12 @@ import aiohttp
 import json
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import logging
+import asyncio
+
+# Set up logging for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Replace with your Telegram bot token
 BOT_TOKEN = '7328870287:AAFwBWlNMBVtyU1bhw2QmSkmWLz0e9kAa8M'
@@ -51,26 +57,38 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     # API URL
     api_url = f"https://for-free.serv00.net/A/aiimage.php?prompt={prompt}&image={amount}"
 
-    # Using aiohttp to make an async HTTP request
-    async with aiohttp.ClientSession() as session:
-        async with session.get(api_url) as response:
-            # Wait for the API response
-            data = await response.json()
+    try:
+        # Using aiohttp to make an async HTTP request
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as response:
+                # Wait for the API response
+                if response.status == 200:
+                    data = await response.json()
+                    logger.info(f"API response: {data}")
 
-    # Check if images are returned
-    if 'images' in data:
-        images = data['images']
-        for image in images:
-            await update.message.reply_photo(image['image'])
+                    # Check if images are returned
+                    if 'images' in data:
+                        images = data['images']
+                        for image in images:
+                            await update.message.reply_photo(image['image'])
 
-        # Optionally, add a join message from the API
-        join_message = data.get('join', 'No join message found.')
-        await update.message.reply_text(join_message)
+                        # Optionally, add a join message from the API
+                        join_message = data.get('join', 'No join message found.')
+                        await update.message.reply_text(join_message)
 
-        # Update user status to 'completed'
-        user_data[user_id]['status'] = 'completed'
-    else:
-        await update.message.reply_text("Sorry, no images were generated for the given prompt.")
+                        # Update user status to 'completed'
+                        user_data[user_id]['status'] = 'completed'
+                    else:
+                        await update.message.reply_text("Sorry, no images were generated for the given prompt.")
+                        user_data[user_id]['status'] = 'failed'
+                else:
+                    logger.error(f"API request failed with status {response.status}")
+                    await update.message.reply_text("There was an error while fetching the images. Please try again later.")
+                    user_data[user_id]['status'] = 'failed'
+
+    except Exception as e:
+        logger.error(f"Error during API request: {e}")
+        await update.message.reply_text("An error occurred while processing your request. Please try again later.")
         user_data[user_id]['status'] = 'failed'
 
     # Save updated user data to JSON
@@ -85,7 +103,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start the bot
-    application.run_polling()
+    application.run_polling(allowed_updates=Update.ALL)
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
