@@ -1,4 +1,4 @@
-python-telegram-bot==20.0
+Flask==2.3.3
+aiohttp==3.8.1
+python-telegram-bot==20.1
 requests==2.28.1
-Pillow==11.1.0
-aiohttp
