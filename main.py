@@ -1,4 +1,4 @@
-import requests
+import aiohttp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
@@ -17,9 +17,11 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     # API URL
     api_url = f"https://for-free.serv00.net/A/aiimage.php?prompt={prompt}&image={amount}"
 
-    # Get the response from the API
-    response = requests.get(api_url)
-    data = response.json()
+    # Using aiohttp to make an async HTTP request
+    async with aiohttp.ClientSession() as session:
+        async with session.get(api_url) as response:
+            # Wait for the API response
+            data = await response.json()
 
     # Check if images are returned
     if 'images' in data:
