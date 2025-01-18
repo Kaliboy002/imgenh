@@ -1,6 +1,7 @@
 import json
 import aiohttp
 import logging
+import requests
 from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters, CallbackContext
@@ -24,17 +25,17 @@ def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text("Welcome! Please provide a prompt for the image generation.")
 
 # Function to handle messages
-def handle_message(update: Update, context: CallbackContext) -> None:
+async def handle_message(update: Update, context: CallbackContext) -> None:
     prompt = update.message.text
     user_id = update.message.from_user.id
     amount = 3  # Number of images
 
     # Your API logic to fetch images
-    # (Make sure you replace this with your own API handling code)
     api_url = f"https://for-free.serv00.net/A/aiimage.php?prompt={prompt}&image={amount}"
 
-    response = aiohttp.get(api_url)
-    data = response.json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(api_url) as response:
+            data = await response.json()
 
     if 'images' in data:
         images = data['images']
@@ -49,6 +50,11 @@ def set_webhook():
     response = requests.get(webhook_url)
     logger.info(f"Webhook setup response: {response.text}")
 
+# Initialize dispatcher
+dispatcher = Dispatcher(bot, None, workers=0)
+dispatcher.add_handler(CommandHandler('start', start))
+dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
 # Webhook route
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -56,10 +62,6 @@ def webhook():
     update = Update.de_json(json.loads(json_str), bot)
 
     # Use Dispatcher to handle the update
-    dispatcher = Dispatcher(bot, None, workers=0)
-    dispatcher.add_handler(CommandHandler('start', start))
-    dispatcher.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     dispatcher.process_update(update)
 
     return 'ok', 200
