@@ -103,7 +103,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start the bot
-    application.run_polling(allowed_updates=Update.ALL)
+    application.run_polling()
 
 if __name__ == '__main__':
     asyncio.run(main())
