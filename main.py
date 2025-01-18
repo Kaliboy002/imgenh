@@ -1,16 +1,16 @@
 import requests
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Replace with your Telegram bot token
 BOT_TOKEN = '7328870287:AAFwBWlNMBVtyU1bhw2QmSkmWLz0e9kAa8M'
 
 # Function to start the bot
-def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text("Welcome! Please provide a prompt for the image generation.")
+async def start(update: Update, context: CallbackContext) -> None:
+    await update.message.reply_text("Welcome! Please provide a prompt for the image generation.")
 
 # Function to handle the image prompt
-def handle_message(update: Update, context: CallbackContext) -> None:
+async def handle_message(update: Update, context: CallbackContext) -> None:
     prompt = update.message.text
     amount = 3  # The number of images to generate
 
@@ -25,27 +25,24 @@ def handle_message(update: Update, context: CallbackContext) -> None:
     if 'images' in data:
         images = data['images']
         for image in images:
-            update.message.reply_photo(image['image'])
+            await update.message.reply_photo(image['image'])
 
         # Optionally, add a join message from the API
         join_message = data.get('join', 'No join message found.')
-        update.message.reply_text(join_message)
+        await update.message.reply_text(join_message)
     else:
-        update.message.reply_text("Sorry, no images were generated for the given prompt.")
+        await update.message.reply_text("Sorry, no images were generated for the given prompt.")
 
-# Set up the updater and dispatcher
+# Set up the application and dispatcher
 def main() -> None:
-    updater = Updater(BOT_TOKEN)
-
-    dispatcher = updater.dispatcher
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Handlers
-    dispatcher.add_handler(CommandHandler('start', start))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start the bot
-    updater.start_polling()
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
