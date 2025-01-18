@@ -1,9 +1,24 @@
 import aiohttp
+import json
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
 # Replace with your Telegram bot token
 BOT_TOKEN = '7328870287:AAFwBWlNMBVtyU1bhw2QmSkmWLz0e9kAa8M'
+USER_DATA_FILE = 'user_data.json'
+
+# Function to read the user data from the JSON file
+def load_user_data():
+    try:
+        with open(USER_DATA_FILE, 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {}
+
+# Function to save the user data to the JSON file
+def save_user_data(data):
+    with open(USER_DATA_FILE, 'w') as file:
+        json.dump(data, file, indent=4)
 
 # Function to start the bot
 async def start(update: Update, context: CallbackContext) -> None:
@@ -12,7 +27,26 @@ async def start(update: Update, context: CallbackContext) -> None:
 # Function to handle the image prompt
 async def handle_message(update: Update, context: CallbackContext) -> None:
     prompt = update.message.text
+    user_id = update.message.from_user.id
     amount = 3  # The number of images to generate
+
+    # Load current user data from JSON
+    user_data = load_user_data()
+
+    # If the user already has an active prompt, inform them
+    if user_id in user_data and user_data[user_id]['status'] == 'processing':
+        await update.message.reply_text("Your request is already being processed. Please wait.")
+        return
+
+    # Mark the user's status as processing
+    user_data[user_id] = {
+        'status': 'processing',
+        'prompt': prompt,
+        'amount': amount
+    }
+    save_user_data(user_data)  # Save data to JSON
+
+    await update.message.reply_text("Processing your image generation request...")
 
     # API URL
     api_url = f"https://for-free.serv00.net/A/aiimage.php?prompt={prompt}&image={amount}"
@@ -32,8 +66,15 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         # Optionally, add a join message from the API
         join_message = data.get('join', 'No join message found.')
         await update.message.reply_text(join_message)
+
+        # Update user status to 'completed'
+        user_data[user_id]['status'] = 'completed'
     else:
         await update.message.reply_text("Sorry, no images were generated for the given prompt.")
+        user_data[user_id]['status'] = 'failed'
+
+    # Save updated user data to JSON
+    save_user_data(user_data)
 
 # Set up the application and dispatcher
 def main() -> None:
