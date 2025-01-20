@@ -1,7 +1,9 @@
 import time
 import requests
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from asyncio import Semaphore
 
 # Define API URLs
 apis = [
@@ -12,6 +14,9 @@ apis = [
 
 # Initialize last used time for each API
 last_used_time = [0, 0, 0]
+
+# Semaphore to ensure only one request is processed at a time
+semaphore = Semaphore(1)
 
 # Function to fetch response from the selected API
 def get_api_response(text, api_index):
@@ -26,20 +31,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Find the next available API (round-robin approach)
     current_time = time.time()
-    for i in range(len(apis)):
-        if current_time - last_used_time[i] > 5:  # If 5 seconds have passed since last use
-            last_used_time[i] = current_time
-            api_response = get_api_response(text, i)
-            message = api_response['result']['text']
-            await update.message.reply_text(message)
-            return
 
-    # If all APIs have been recently used, wait and use the first one
-    await asyncio.sleep(5)  # Wait for 5 seconds before using the first API again
-    last_used_time[0] = time.time()
-    api_response = get_api_response(text, 0)
-    message = api_response['result']['text']
-    await update.message.reply_text(message)
+    # Ensure that only one request is processed at a time using the semaphore
+    async with semaphore:
+        for i in range(len(apis)):
+            if current_time - last_used_time[i] > 5:  # If 5 seconds have passed since last use
+                last_used_time[i] = current_time
+                api_response = get_api_response(text, i)
+                message = api_response['result']['text']
+                await update.message.reply_text(message)
+                return
+
+        # If all APIs have been recently used, wait and use the first one
+        await asyncio.sleep(5)  # Wait for 5 seconds before using the first API again
+        last_used_time[0] = time.time()
+        api_response = get_api_response(text, 0)
+        message = api_response['result']['text']
+        await update.message.reply_text(message)
 
 # Main function to start the bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
