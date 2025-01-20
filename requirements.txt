@@ -1,5 +1,2 @@
-flask==3.0.0
-rembg==2.0.60
-pillow==8.4.0
-requests==2.26.0
-#h
+pymongo
+python-telegram-bot
