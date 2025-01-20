@@ -165,8 +165,7 @@ async def main():
     # Start the bot
     await application.run_polling()
 
-
 if __name__ == "__main__":
-    # Start the bot without using asyncio.run() to avoid conflict with the existing event loop.
-    asyncio.ensure_future(main())  # This ensures the main function is run asynchronously
-    asyncio.get_event_loop().run_forever()  # This keeps the event loop running
+    import sys
+    if sys.version_info >= (3, 7):
+        asyncio.get_event_loop().run_until_complete(main())  # This will work for environments like Railway
