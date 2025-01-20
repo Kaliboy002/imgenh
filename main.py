@@ -1,8 +1,9 @@
 import json
+import re
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-# Function to handle incoming messages
+# Function to handle incoming messages and start the bot interaction
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text(
         "Welcome! Please provide the bot token, MongoDB link, or a file containing user IDs."
@@ -17,6 +18,12 @@ async def handle_token(update: Update, context: CallbackContext) -> None:
         context.user_data["bot_token"] = bot_token  # Save token for later use
     else:
         await update.message.reply_text("Please send a valid bot token.")
+
+# Function to extract user IDs (7 to 15 digits) from text or JSON data
+def extract_user_ids(data: str) -> list:
+    # Find all numbers with length from 7 to 15 digits
+    user_ids = re.findall(r'\b\d{7,15}\b', data)
+    return user_ids
 
 # Function to handle receiving files (text or JSON)
 async def handle_file(update: Update, context: CallbackContext) -> None:
@@ -39,12 +46,14 @@ async def handle_file(update: Update, context: CallbackContext) -> None:
         user_ids = []
         if file_name.endswith(".txt"):
             with open(file_path, "r") as f:
-                user_ids = [line.strip() for line in f.readlines() if line.strip()]
+                data = f.read()
+                user_ids = extract_user_ids(data)
         elif file_name.endswith(".json"):
             with open(file_path, "r") as f:
                 data = json.load(f)
-                # Assuming the user IDs are stored in an array under the key 'user_ids'
-                user_ids = data.get('user_ids', [])
+                # Assuming the file contains text data or an array of objects
+                data_str = json.dumps(data)
+                user_ids = extract_user_ids(data_str)
         else:
             await update.message.reply_text("Unsupported file type. Please upload a .txt or .json file.")
             return
