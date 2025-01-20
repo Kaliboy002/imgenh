@@ -1,108 +1,169 @@
-import logging
-import json
+import asyncio
 import re
-from telegram import Update, InputFile
+import json
+from telegram import Update, ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from pymongo import MongoClient
-from bson import ObjectId
+from telegram.error import TelegramError
 
-# Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Utility function to extract IDs (7 to 15 digits) from text and JSON files
-def extract_ids_from_text(content):
-    # Extract IDs that are 7 to 15 digits long from text or mixed content
-    return re.findall(r'\b\d{7,15}\b', content)
-
-# Function to connect to MongoDB and fetch IDs
-def fetch_ids_from_mongo(db_link):
-    ids = []
+# Function to get MongoDB client
+def get_mongo_client(uri):
     try:
-        client = MongoClient(db_link)
-        db = client.get_database()
-        users_collection = db.get_collection("users")  # Assuming the collection is named 'users'
-        users = users_collection.find({}, {"_id": 1})  # Fetch only the user IDs
-        ids = [str(user["_id"]) for user in users if isinstance(user["_id"], ObjectId)]
+        client = MongoClient(uri)
+        return client
     except Exception as e:
-        logger.error(f"Error connecting to MongoDB: {e}")
-    return ids
+        print(f"Error connecting to MongoDB: {e}")
+        return None
 
-# Handler for the /start command
+
+# Function to check if a string can be an ID
+def is_valid_user_id(text):
+    # Using regex to extract valid user IDs from the message text (numbers only between 7 to 15 digits)
+    user_ids = re.findall(r'\b\d{7,15}\b', text)
+    return user_ids
+
+
+# Function to send message to all user IDs
+async def send_message_to_users(bot, user_ids, message_text):
+    for user_id in user_ids:
+        try:
+            await bot.send_message(user_id, message_text, parse_mode=ParseMode.HTML)
+            print(f"Message sent to {user_id}")
+        except TelegramError as e:
+            print(f"Error sending message to {user_id}: {e}")
+
+
+# Function to handle /start command
 async def start(update: Update, context: CallbackContext):
-    await update.message.reply_text("Please send the bot token.")
+    await update.message.reply("Welcome to the Broadcast Bot! Please provide your bot token.")
 
-# Handler for receiving the bot token and asking for MongoDB or file input
-async def handle_bot_token(update: Update, context: CallbackContext):
+
+# Function to handle bot token input
+async def get_bot_token(update: Update, context: CallbackContext):
     bot_token = update.message.text.strip()
     context.user_data['bot_token'] = bot_token
-    await update.message.reply_text("Please send your MongoDB link, a file with IDs (TXT/JSON), or the user IDs directly.")
+    await update.message.reply("Got the bot token! Now, please provide your MongoDB URI.")
 
-# Handler for MongoDB link or file input
-async def handle_ids_or_db_link(update: Update, context: CallbackContext):
-    text = update.message.text.strip()
-    if text.startswith("mongodb+srv://"):
-        context.user_data['db_link'] = text
-        await update.message.reply_text("MongoDB link received. Please send the message or file to broadcast.")
-    elif text.endswith('.txt') or text.endswith('.json'):
-        # Handle files
-        await update.message.reply_text("Please send me the file with user IDs.")
+
+# Function to handle MongoDB URI input
+async def get_mongo_uri(update: Update, context: CallbackContext):
+    mongo_uri = update.message.text.strip()
+    context.user_data['mongo_uri'] = mongo_uri
+    await update.message.reply("MongoDB URI received! Now, please send the message or file you want to broadcast.")
+
+
+# Function to handle user IDs (from file, text, or MongoDB)
+async def handle_user_ids(update: Update, context: CallbackContext):
+    user_data = context.user_data
+    bot_token = user_data.get('bot_token')
+    mongo_uri = user_data.get('mongo_uri')
+
+    if not bot_token or not mongo_uri:
+        await update.message.reply("Please provide both the bot token and MongoDB URI first.")
+        return
+
+    message_text = update.message.text.strip()
+
+    # Extracting user IDs from the message (either direct IDs in text or uploaded file)
+    user_ids = is_valid_user_id(message_text)
+
+    if user_ids:
+        # If user IDs are extracted directly from the message text
+        await send_message_to_users(update.message.bot, user_ids, message_text)
+        await update.message.reply("Message broadcasted to user IDs in the text.")
     else:
-        # Handle user IDs directly from the message
-        ids = extract_ids_from_text(text)
-        context.user_data['user_ids'] = ids
-        await update.message.reply_text(f"User IDs extracted: {', '.join(ids)}. Please send the message or file to broadcast.")
+        # If no user IDs found in the message, check if there's a file
+        if update.message.document:
+            file = await update.message.document.get_file()
+            file_path = f"downloads/{file.file_id}.txt"
+            await file.download(file_path)
 
-# Handler to process files and extract IDs
+            # Read user IDs from the downloaded file
+            with open(file_path, 'r') as f:
+                content = f.read()
+                user_ids = is_valid_user_id(content)
+
+            if user_ids:
+                await send_message_to_users(update.message.bot, user_ids, message_text)
+                await update.message.reply("Message broadcasted to user IDs in the file.")
+            else:
+                await update.message.reply("No valid user IDs found in the file.")
+        else:
+            # No user IDs in the message or file, check MongoDB
+            client = get_mongo_client(mongo_uri)
+            if client:
+                db = client.get_database()
+                collection = db.get_collection('users')  # Collection containing user IDs
+                user_ids_from_db = [user['user_id'] for user in collection.find()]
+                if user_ids_from_db:
+                    await send_message_to_users(update.message.bot, user_ids_from_db, message_text)
+                    await update.message.reply("Message broadcasted to all users from MongoDB.")
+                else:
+                    await update.message.reply("No user IDs found in the MongoDB collection.")
+            else:
+                await update.message.reply("Failed to connect to MongoDB. Please check the URI.")
+
+
+# Function to handle incoming file uploads
 async def handle_file(update: Update, context: CallbackContext):
-    file = await update.message.document.get_file()
-    file_content = await file.download_as_bytearray()
+    if update.message.document:
+        file = await update.message.document.get_file()
+        file_path = f"downloads/{file.file_id}.txt"
+        await file.download(file_path)
+        with open(file_path, 'r') as f:
+            content = f.read()
+            user_ids = is_valid_user_id(content)
 
-    if file.file_name.endswith('.txt'):
-        content = file_content.decode('utf-8')
-        ids = extract_ids_from_text(content)
-        context.user_data['user_ids'] = ids
-    elif file.file_name.endswith('.json'):
-        content = json.loads(file_content.decode('utf-8'))
-        ids = [str(item['id']) for item in content if 'id' in item]
-        context.user_data['user_ids'] = ids
+        if user_ids:
+            await update.message.reply(f"Found {len(user_ids)} user IDs in the uploaded file.")
+            context.user_data['user_ids'] = user_ids
+        else:
+            await update.message.reply("No valid user IDs found in the file.")
 
-    await update.message.reply_text(f"User IDs extracted: {', '.join(ids)}. Please send the message or file to broadcast.")
 
-# Handler for receiving the broadcast message
-async def handle_broadcast_message(update: Update, context: CallbackContext):
-    if 'user_ids' in context.user_data:
-        message = update.message.text.strip()
-        bot_token = context.user_data.get('bot_token')
-        user_ids = context.user_data['user_ids']
+# Function to handle the message broadcast
+async def broadcast_message(update: Update, context: CallbackContext):
+    user_data = context.user_data
+    bot_token = user_data.get('bot_token')
+    mongo_uri = user_data.get('mongo_uri')
+    message_text = update.message.text.strip()
 
-        # Send message to all user IDs
-        for user_id in user_ids:
-            try:
-                await context.bot.send_message(user_id, message)
-            except Exception as e:
-                logger.error(f"Error sending message to {user_id}: {e}")
+    if not bot_token or not mongo_uri:
+        await update.message.reply("Please provide both the bot token and MongoDB URI first.")
+        return
 
-        await update.message.reply_text("Message broadcasted successfully.")
+    if 'user_ids' in user_data:
+        user_ids = user_data['user_ids']
+        await send_message_to_users(update.message.bot, user_ids, message_text)
+        await update.message.reply("Message broadcasted to the user IDs from the file.")
     else:
-        await update.message.reply_text("No user IDs found. Please provide user IDs.")
+        await update.message.reply("No user IDs available. Please upload a file with IDs or provide them directly.")
 
-# Main function to run the bot
+
+# Function to handle errors in the bot
+async def error(update: Update, context: CallbackContext):
+    print(f"Error occurred: {context.error}")
+    await update.message.reply("An error occurred while processing your request. Please try again.")
+
+
+# Set up the Telegram bot
 async def main():
-    bot_token = '7817420437:AAEBdeljD8u1LkoxcD7TKYZQh58F-TkywXo'  # Replace with your bot token
-    application = Application.builder().token(bot_token).build()
+    application = Application.builder().token("7817420437:AAEBdeljD8u1LkoxcD7TKYZQh58F-TkywXo").build()
 
-    # Add command and message handlers
+    # Handlers for various commands and messages
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bot_token))
-    application.add_handler(MessageHandler(filters.TEXT, handle_ids_or_db_link))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_bot_token))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_mongo_uri))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_ids))
     application.add_handler(MessageHandler(filters.DOCUMENT, handle_file))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message))
 
-    # Run the bot
+    application.add_error_handler(error)
+
+    # Start the bot
     await application.run_polling()
 
-if __name__ == '__main__':
-    import asyncio
+
+if __name__ == "__main__":
     asyncio.run(main())
