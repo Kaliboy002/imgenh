@@ -1,7 +1,8 @@
 import asyncio
 import re
 import json
-from telegram import Update, ParseMode
+from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from pymongo import MongoClient
 from telegram.error import TelegramError
