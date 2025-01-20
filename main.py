@@ -1,105 +1,108 @@
+import logging
 import json
 import re
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from pymongo import MongoClient
+from bson import ObjectId
 
-# Function to handle incoming messages and start the bot interaction
-async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text(
-        "Welcome! Please provide the bot token, MongoDB link, or a file containing user IDs."
-    )
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Function to handle receiving the bot token
-async def handle_token(update: Update, context: CallbackContext) -> None:
-    bot_token = update.message.text.strip()
+# Utility function to extract IDs (7 to 15 digits) from text and JSON files
+def extract_ids_from_text(content):
+    # Extract IDs that are 7 to 15 digits long from text or mixed content
+    return re.findall(r'\b\d{7,15}\b', content)
 
-    if bot_token:  # Validate token
-        await update.message.reply_text("Bot token received successfully! Now send the user IDs file (txt/json) or list.")
-        context.user_data["bot_token"] = bot_token  # Save token for later use
-    else:
-        await update.message.reply_text("Please send a valid bot token.")
-
-# Function to extract user IDs (7 to 15 digits) from text or JSON data
-def extract_user_ids(data: str) -> list:
-    # Find all numbers with length from 7 to 15 digits
-    user_ids = re.findall(r'\b\d{7,15}\b', data)
-    return user_ids
-
-# Function to handle receiving files (text or JSON)
-async def handle_file(update: Update, context: CallbackContext) -> None:
-    bot_token = context.user_data.get("bot_token")
-
-    if not bot_token:
-        await update.message.reply_text("You must provide the bot token first.")
-        return
-
-    file = update.message.document
-    file_name = file.file_name
-
-    # Download the file
-    new_file = await file.get_file()
-    file_path = f"/tmp/{file_name}"
-    await new_file.download_to_drive(file_path)
-
-    # Read the file based on its extension
+# Function to connect to MongoDB and fetch IDs
+def fetch_ids_from_mongo(db_link):
+    ids = []
     try:
-        user_ids = []
-        if file_name.endswith(".txt"):
-            with open(file_path, "r") as f:
-                data = f.read()
-                user_ids = extract_user_ids(data)
-        elif file_name.endswith(".json"):
-            with open(file_path, "r") as f:
-                data = json.load(f)
-                # Assuming the file contains text data or an array of objects
-                data_str = json.dumps(data)
-                user_ids = extract_user_ids(data_str)
-        else:
-            await update.message.reply_text("Unsupported file type. Please upload a .txt or .json file.")
-            return
-
-        await update.message.reply_text(f"File processed successfully. Found {len(user_ids)} user IDs.")
-        context.user_data["user_ids"] = user_ids
+        client = MongoClient(db_link)
+        db = client.get_database()
+        users_collection = db.get_collection("users")  # Assuming the collection is named 'users'
+        users = users_collection.find({}, {"_id": 1})  # Fetch only the user IDs
+        ids = [str(user["_id"]) for user in users if isinstance(user["_id"], ObjectId)]
     except Exception as e:
-        await update.message.reply_text(f"Error reading file: {str(e)}")
+        logger.error(f"Error connecting to MongoDB: {e}")
+    return ids
 
-# Function to handle broadcasting messages
-async def handle_broadcast(update: Update, context: CallbackContext) -> None:
-    bot_token = context.user_data.get("bot_token")
-    user_ids = context.user_data.get("user_ids")
+# Handler for the /start command
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text("Please send the bot token.")
 
-    if not bot_token:
-        await update.message.reply_text("You must provide the bot token first.")
-        return
-    if not user_ids:
-        await update.message.reply_text("You must provide the user IDs first.")
-        return
+# Handler for receiving the bot token and asking for MongoDB or file input
+async def handle_bot_token(update: Update, context: CallbackContext):
+    bot_token = update.message.text.strip()
+    context.user_data['bot_token'] = bot_token
+    await update.message.reply_text("Please send your MongoDB link, a file with IDs (TXT/JSON), or the user IDs directly.")
 
-    # Broadcast the message to all user IDs
-    broadcast_message = update.message.text.split("\n", 1)[1].strip()  # Text after the command
+# Handler for MongoDB link or file input
+async def handle_ids_or_db_link(update: Update, context: CallbackContext):
+    text = update.message.text.strip()
+    if text.startswith("mongodb+srv://"):
+        context.user_data['db_link'] = text
+        await update.message.reply_text("MongoDB link received. Please send the message or file to broadcast.")
+    elif text.endswith('.txt') or text.endswith('.json'):
+        # Handle files
+        await update.message.reply_text("Please send me the file with user IDs.")
+    else:
+        # Handle user IDs directly from the message
+        ids = extract_ids_from_text(text)
+        context.user_data['user_ids'] = ids
+        await update.message.reply_text(f"User IDs extracted: {', '.join(ids)}. Please send the message or file to broadcast.")
 
-    for user_id in user_ids:
-        try:
-            # Send the message to each user
-            await context.bot.send_message(user_id, broadcast_message)
-            print(f"Message sent to {user_id}")
-        except Exception as e:
-            print(f"Failed to send message to {user_id}: {str(e)}")
+# Handler to process files and extract IDs
+async def handle_file(update: Update, context: CallbackContext):
+    file = await update.message.document.get_file()
+    file_content = await file.download_as_bytearray()
 
-    await update.message.reply_text(f"Broadcast message sent to {len(user_ids)} users.")
+    if file.file_name.endswith('.txt'):
+        content = file_content.decode('utf-8')
+        ids = extract_ids_from_text(content)
+        context.user_data['user_ids'] = ids
+    elif file.file_name.endswith('.json'):
+        content = json.loads(file_content.decode('utf-8'))
+        ids = [str(item['id']) for item in content if 'id' in item]
+        context.user_data['user_ids'] = ids
 
-# Function to handle the bot's main behavior
-async def main() -> None:
-    application = Application.builder().token("7817420437:AAEBdeljD8u1LkoxcD7TKYZQh58F-TkywXo").build()
+    await update.message.reply_text(f"User IDs extracted: {', '.join(ids)}. Please send the message or file to broadcast.")
 
-    # Handlers
+# Handler for receiving the broadcast message
+async def handle_broadcast_message(update: Update, context: CallbackContext):
+    if 'user_ids' in context.user_data:
+        message = update.message.text.strip()
+        bot_token = context.user_data.get('bot_token')
+        user_ids = context.user_data['user_ids']
+
+        # Send message to all user IDs
+        for user_id in user_ids:
+            try:
+                await context.bot.send_message(user_id, message)
+            except Exception as e:
+                logger.error(f"Error sending message to {user_id}: {e}")
+
+        await update.message.reply_text("Message broadcasted successfully.")
+    else:
+        await update.message.reply_text("No user IDs found. Please provide user IDs.")
+
+# Main function to run the bot
+async def main():
+    bot_token = '7817420437:AAEBdeljD8u1LkoxcD7TKYZQh58F-TkywXo'  # Replace with your bot token
+    application = Application.builder().token(bot_token).build()
+
+    # Add command and message handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("set_token", handle_token))  # Get token
-    application.add_handler(MessageHandler(filters.Document.ALL, handle_file))  # Handle files (txt/json)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast))  # Handle broadcasting text
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bot_token))
+    application.add_handler(MessageHandler(filters.TEXT, handle_ids_or_db_link))
+    application.add_handler(MessageHandler(filters.DOCUMENT, handle_file))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast_message))
 
-    # Start the bot
+    # Run the bot
     await application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
