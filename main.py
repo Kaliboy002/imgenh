@@ -126,7 +126,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_broadcast))
 
     # Handler for file upload
-    application.add_handler(MessageHandler(filters.DOCUMENT, handle_file))
+    application.add_handler(MessageHandler(filters.Document, handle_file))
 
     # Run the bot
     application.run_polling()
