@@ -157,7 +157,7 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_bot_token))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_mongo_uri))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_ids))
-    application.add_handler(MessageHandler(filters.DOCUMENT, handle_file))
+    application.add_handler(MessageHandler(filters.Document, handle_file))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast_message))
 
     application.add_error_handler(error)
