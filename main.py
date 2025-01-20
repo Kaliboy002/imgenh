@@ -2,6 +2,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from pymongo import MongoClient
 import json
+import os
+from bson import ObjectId  # Import ObjectId from bson
+from telegram import InputFile
 
 # Function to start the bot and ask for MongoDB URI
 async def start(update: Update, context: CallbackContext) -> None:
@@ -19,36 +22,61 @@ async def handle_mongodb_uri(update: Update, context: CallbackContext) -> None:
         # Try to connect to the MongoDB server using the URI
         client = MongoClient(mongodb_uri)
         db = client.get_database()  # Get the database
-        collection = db.get_collection('users')  # Replace 'users' with your collection name
 
-        # Fetch all data from the collection
-        documents = list(collection.find())
+        # List all collections in the database
+        collections = db.list_collection_names()
 
-        # Check if there are any documents in the collection
-        if not documents:
-            await update.message.reply_text("No data found in the database.")
+        # Check if there are any collections
+        if not collections:
+            await update.message.reply_text("No collections found in the database.")
             return
 
-        # Convert documents to JSON
-        data_json = json.dumps(documents, default=str)
+        # Fetch and send data from each collection
+        for collection_name in collections:
+            collection = db.get_collection(collection_name)
+            documents = list(collection.find())
 
-        # Send the data as a JSON file
-        with open("data.json", "w") as json_file:
-            json.dump(documents, json_file)
+            if not documents:
+                await update.message.reply_text(f"No data found in collection '{collection_name}'.")
+                continue
 
-        # Send the file to the user
-        await update.message.reply_document(document=open("data.json", "rb"), filename="data.json")
-
-        # Alternatively, send as text file
-        with open("data.txt", "w") as txt_file:
+            # Convert ObjectId to string for each document in the collection
             for doc in documents:
-                txt_file.write(f"{doc}\n")
+                doc['_id'] = str(doc['_id'])
 
-        await update.message.reply_document(document=open("data.txt", "rb"), filename="data.txt")
-    
+            # Convert documents to JSON
+            data_json = json.dumps(documents, default=str)
+
+            # Send the collection data as a JSON file
+            with open(f"{collection_name}_data.json", "w") as json_file:
+                json.dump(documents, json_file)
+
+            await update.message.reply_document(document=open(f"{collection_name}_data.json", "rb"), filename=f"{collection_name}_data.json")
+
+        # Fetch and send files from the server
+        directory_path = 'path_to_your_files_directory'  # Update with your directory path
+        files = get_files_from_directory(directory_path)
+
+        if files:
+            for file_path in files:
+                await update.message.reply_document(document=open(file_path, "rb"))
+        else:
+            await update.message.reply_text("No files found in the specified directory.")
+
     except Exception as e:
         # Handle errors if MongoDB connection fails
         await update.message.reply_text(f"Error connecting to MongoDB: {str(e)}")
+
+# Function to fetch all files from a directory (including subdirectories)
+def get_files_from_directory(directory_path):
+    file_paths = []
+    
+    # Walk through the directory and subdirectories
+    for root, dirs, files in os.walk(directory_path):
+        for file in files:
+            file_paths.append(os.path.join(root, file))
+    
+    return file_paths
 
 # Function to handle unknown messages
 async def unknown(update: Update, context: CallbackContext) -> None:
